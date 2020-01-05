@@ -29,17 +29,48 @@ def convert_numbers(k):
             pass
     return k
 
-def preprocess(pd):
+def preprocess_with_nums(pd):
     pd = pd.str.lower()
     pd = pd.str.replace('[{}]'.format('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~\n\t'), ' ')
     pd = pd.apply(lambda x: [w for w in w_tokenizer.tokenize(x)])
-    pd = pd.apply(lambda x: convert_numbers(x))
+#     pd = pd.apply(lambda x: convert_numbers(x))
     pd = pd.str.join(' ')
     
     pd = pd.apply(lambda x: [lemmatizer.lemmatize(w) for w in w_tokenizer.tokenize(x)])    
+    pd = pd.apply(lambda x: [lemmatizer.lemmatize(w, 'v') for w in x])
     pd = pd.apply(lambda x: [item for item in x if item not in stop_words])
     pd = pd.apply(lambda x: [item for item in x if len(item)>1])
     return pd
+
+
+def preprocess(pd):
+    pd = pd.str.lower()
+    pd = pd.str.replace('[^a-zA-Z]', ' ')
+    pd = pd.apply(lambda x: [w for w in w_tokenizer.tokenize(x)])
+    pd = pd.str.join(' ')
+    
+    pd = pd.apply(lambda x: [lemmatizer.lemmatize(w) for w in w_tokenizer.tokenize(x)])    
+    pd = pd.apply(lambda x: [lemmatizer.lemmatize(w, 'v') for w in x])
+    pd = pd.apply(lambda x: [item for item in x if item not in stop_words])
+    pd = pd.apply(lambda x: [item for item in x if len(item)>3])
+    pd = pd.apply(lambda x: [i[0] for i in nltk.pos_tag(x) if i[1] in ['JJ', 'JJR', 'JJS', 'NN', 'NNS', 'NNP', 'NNPS']])
+    pd = pd.apply(lambda x: " ".join(x))
+    return pd
+
+# def preprocess(pd):
+#     pd = pd.str.lower()
+#     pd = pd.str.replace('[{}]'.format('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~\n\t'), ' ')
+#     pd = pd.str.replace('\d+', ' ')
+#     pd = pd.apply(lambda x: [w for w in w_tokenizer.tokenize(x)])
+#     pd = pd.apply(lambda x: convert_numbers(x))
+#     pd = pd.str.join(' ')
+    
+#     pd = pd.apply(lambda x: [lemmatizer.lemmatize(w) for w in w_tokenizer.tokenize(x)])    
+#     pd = pd.apply(lambda x: [lemmatizer.lemmatize(w, 'v') for w in x])
+#     pd = pd.apply(lambda x: [item for item in x if item not in stop_words])
+#     pd = pd.apply(lambda x: [item for item in x if len(item)>2])
+#     pd = pd.apply(lambda x: " ".join(x))
+#     return pd
 
 def preprocess_lite(pd):
     pd = pd.str.lower()
@@ -52,15 +83,13 @@ def preprocess_lite(pd):
     pd = pd.apply(lambda x: [item for item in x if len(item)>1])
     return pd
 
-def processReviews(reviews, window=5, MAX_VOCAB_SIZE=2000):
-    vectorizer = CountVectorizer(analyzer="word",tokenizer=None, max_df=0.7, max_features=MAX_VOCAB_SIZE)
+def processReviews(reviews, window=5, MAX_VOCAB_SIZE=50000):
+    vectorizer = CountVectorizer(analyzer="word", tokenizer=None, max_df=0.7, min_df = 7, max_features=MAX_VOCAB_SIZE)
     count_matrix = vectorizer.fit_transform(reviews)
-    tfidf_vectorizer = TfidfVectorizer(max_features=MAX_VOCAB_SIZE, max_df=0.7)
-    tfidf_matrix = tfidf_vectorizer.fit_transform(reviews)
     words = vectorizer.get_feature_names()
     vocabulary = dict(zip(words,np.arange(len(words))))
     inv_vocabulary = dict(zip(np.arange(len(words)),words))
-    return count_matrix.toarray(), tfidf_matrix.toarray(), vocabulary, words
+    return count_matrix.toarray(), vocabulary, words
 
 def get_cosine(a, b):
     return 1 - spatial.distance.cosine(a, b)
@@ -138,8 +167,13 @@ def kl_score_multi(comb):
     pk, qk = comb[0], comb[1]
     return (scipy.stats.entropy(pk, qk)*.5 + scipy.stats.entropy(qk,pk)*.5)
 
-def get_hscore_multi(dt_distribution, X, k):
-    testlen = X.shape[0]
+def get_hscore_multi(dt_distribution_, X_, k, testlen):
+    
+    index = np.random.choice(X_.shape[0], testlen, replace=False)
+    
+    dt_distribution = dt_distribution_[index]
+    X = X_[index]
+
     all_kl_scores = np.zeros((testlen, testlen))
 
     combinations = []
@@ -149,7 +183,7 @@ def get_hscore_multi(dt_distribution, X, k):
             combinations.append([i, j])
             dt_combinations.append((dt_distribution[i], dt_distribution[j]))
 
-    pool = multiprocessing.Pool()
+    pool = multiprocessing.Pool(10)
     scores = pool.map(kl_score_multi, dt_combinations)
     pool.close()
 
